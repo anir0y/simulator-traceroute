@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta author="anir0y">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Interactive Traceroute Simulator (with Pseudo Terminal)</title>
+  <style>
+    :root {
+      --primary: #2c3e50;
+      --secondary: #3498db;
+      --background: #f8f9fa;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui;
+      margin: 0;
+      padding: 2rem;
+      background: var(--background);
+      color: var(--primary);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 2rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      margin-bottom: 1.5rem;
+    }
+
+    /* =============== Network Map Styling =============== */
+    #network-map {
+      height: 200px;
+      background: linear-gradient(145deg, #ffffff, #f0f4f8);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative; /* for .hop-node absolute positions */
+    }
+
+    .hop-node {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      transform: translateX(-50%); /* center each node at left% */
+    }
+    .hop-node.local { background: #ff7675; }
+    .hop-node.isp { background: #74b9ff; }
+    .hop-node.backbone { background: #55efc4; }
+    .hop-node.destination { background: #a29bfe; }
+
+    /* =============== Traceroute Box =============== */
+    #traceroute-box input {
+      width: 100%;
+      padding: 0.8rem;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      margin: 1rem 0;
+      font-size: 1rem;
+    }
+
+    button {
+      background: var(--secondary);
+      color: white;
+      border: none;
+      padding: 0.8rem 1.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    button:hover {
+      transform: translateY(-2px);
+    }
+
+    #output {
+      background: #f8f9fa;
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    /* =============== Quiz Elements =============== */
+    .quiz-option {
+      background: white;
+      border: 2px solid #eee;
+      padding: 1rem;
+      margin: 0.5rem 0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .quiz-option:hover {
+      border-color: var(--secondary);
+      transform: translateX(5px);
+    }
+
+    /* =============== Progress Bar =============== */
+    .progress-bar {
+      height: 4px;
+      background: #eee;
+      border-radius: 2px;
+      margin: 1rem 0;
+    }
+    .progress {
+      height: 100%;
+      background: var(--secondary);
+      width: 0;
+      transition: width 0.3s ease;
+    }
+
+    /* =============== Tooltip =============== */
+    .tooltip {
+      position: relative;
+    }
+    .tooltip-text {
+      visibility: hidden;
+      width: 200px;
+      background: var(--primary);
+      color: #fff;
+      text-align: center;
+      border-radius: 6px;
+      padding: 0.5rem;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .tooltip:hover .tooltip-text {
+      visibility: visible;
+      opacity: 1;
+    }
+
+    /* =============== Legend Items =============== */
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .legend-item .hop-node {
+      margin-right: 0.5rem;
+      position: static; /* no absolute positioning in the legend */
+      transform: none;
+    }
+
+    /* =============== Pseudo Terminal =============== */
+    .terminal-container {
+      background: #272822; /* typical "terminal" dark */
+      color: #f8f8f2;
+      font-family: monospace;
+      border-radius: 8px;
+      padding: 1rem;
+      display: none; /* hidden by default */
+    }
+    .terminal-header {
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div>
+    <!-- Network Map Card -->
+    <div class="card">
+      <h2>🌐 Network Path Visualizer</h2>
+      <div id="network-map"></div>
+    </div>
+
+    <!-- Traceroute Simulator Card -->
+    <div class="card" id="traceroute-box">
+      <h3>🚀 Traceroute Simulator</h3>
+      <input type="text" id="target" placeholder="Enter domain (e.g., github.com)" value="github.com">
+      <button onclick="startTrace()">Start Tracing</button>
+      <div class="progress-bar">
+        <div class="progress" id="trace-progress"></div>
+      </div>
+      <pre id="output">Tracing route to github.com...</pre>
+    </div>
+  </div>
+
+  <!-- Right Column: Quiz & Guide -->
+  <div>
+    <!-- Quiz Box -->
+    <div class="card" id="quiz-box" style="display: none;">
+      <h3>📝 Quiz</h3>
+      <div id="quiz-content"></div>
+      <p id="quiz-feedback"></p>
+    </div>
+
+    <!-- Network Guide (Legend) -->
+    <div class="card">
+      <h3>📚 Network Guide</h3>
+      <div class="legend-item">
+        <div class="hop-node local"></div>
+        Local Network
+      </div>
+      <div class="legend-item">
+        <div class="hop-node isp"></div>
+        ISP Infrastructure
+      </div>
+      <div class="legend-item">
+        <div class="hop-node backbone"></div>
+        Internet Backbone
+      </div>
+      <div class="legend-item">
+        <div class="hop-node destination"></div>
+        Destination
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Card for the Pseudo Terminal -->
+<div class="card">
+  <h3>🔧 Real Traceroute Command</h3>
+  <p>Click below to see a pseudo-terminal output of a real <code>traceroute</code> command.</p>
+  <button onclick="toggleRealTraceroute()">Show Real Traceroute</button>
+  <div class="terminal-container" id="pseudo-terminal">
+    <div class="terminal-header">$ traceroute <span id="term-domain">github.com</span></div>
+    <pre id="real-traceroute-output"></pre>
+  </div>
+</div>
+
+<script>
+/* =======================
+   Mock Data for Simulation
+   ======================= */
+const networkComponents = {
+  isps: ["Comcast", "AT&T", "Verizon", "Deutsche Telekom"],
+  backbones: ["Level3", "Cogent", "NTT", "Telia"],
+  destinations: {
+    "github.com":  { ip: "140.82.121.3", region: "North America" },
+    "baidu.com":   { ip: "39.156.69.79", region: "Asia" },
+    "example.com": { ip: "93.184.216.34", region: "Europe" }
+  }
+};
+
+/* =======================
+   Generate a Random Path
+   ======================= */
+function generatePath(targetRegion) {
+  const hops = [];
+
+  // 1) Local router
+  hops.push({
+    ip: "192.168.1.1",
+    name: "Local Router",
+    type: "local",
+    latency: [2, 1, 1]
+  });
+
+  // 2) ISP gateway
+  const isp = networkComponents.isps[
+    Math.floor(Math.random() * networkComponents.isps.length)
+  ];
+  hops.push({
+    ip: `10.100.${Math.floor(Math.random() * 255)}.1`,
+    name: `${isp} Gateway`,
+    type: "isp",
+    latency: [15, 14, 16]
+  });
+
+  // 3) Random backbone hops (2 to 4)
+  const backboneCount = Math.floor(Math.random() * 3) + 2;
+  for (let i = 0; i < backboneCount; i++) {
+    const provider = networkComponents.backbones[
+      Math.floor(Math.random() * networkComponents.backbones.length)
+    ];
+    hops.push({
+      ip: `198.51.100.${Math.floor(Math.random() * 255)}`,
+      name: `${provider} Backbone`,
+      type: "backbone",
+      latency: Array.from({ length: 3 }, () => 20 + Math.floor(Math.random() * 20))
+    });
+  }
+
+  // 4) Destination
+  if (targetRegion === "Asia") {
+    hops.push({
+      ip: "39.156.69.79",
+      name: "Baidu Server",
+      type: "destination",
+      latency: [35, 36, 35]
+    });
+  } else {
+    hops.push({
+      ip: "140.82.121.3",
+      name: "GitHub Server",
+      type: "destination",
+      latency: [35, 36, 35]
+    });
+  }
+
+  return hops;
+}
+
+/* =======================
+   Display Trace Output
+   ======================= */
+function displayTrace(path, targetDomain) {
+  const outputEl = document.getElementById('output');
+  outputEl.textContent = `Tracing route to ${targetDomain}...\n`;
+
+  path.forEach((hop, index) => {
+    setTimeout(() => {
+      const isTimeout = (Math.random() < 0.2);
+      const latencyStr = isTimeout
+        ? '* * *'
+        : hop.latency.map(t => t + 'ms').join('  ');
+
+      let line = (index + 1) + '  ' + hop.ip + '  ' + hop.name + '  ' + latencyStr + '\n';
+
+      if (isTimeout) {
+        line += '    ' + timeoutMessage(hop.type) + '\n';
+      }
+
+      // Append the line
+      outputEl.textContent += line;
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }, index * 1000);
+  });
+}
+
+/* =======================
+   Timeout Messages
+   ======================= */
+function timeoutMessage(hopType) {
+  const messages = {
+    local: "Local firewall blocking ICMP (simulated).",
+    isp: "ISP rate limiting/filtering (simulated).",
+    backbone: "Backbone router not responding (simulated).",
+    destination: "Destination not responding (simulated)."
+  };
+  return messages[hopType] || "No response.";
+}
+
+/* =======================
+   Network Map Visualization
+   (Evenly distribute from 10% to 90%)
+   ======================= */
+function createNetworkMap(path) {
+  const map = document.getElementById('network-map');
+  map.innerHTML = '';
+
+  const totalHops = path.length - 1 || 1;
+  const inset = 10; // from 10% to 90%
+
+  path.forEach((hop, index) => {
+    const node = document.createElement('div');
+    node.className = 'hop-node ' + hop.type;
+
+    const fraction = index / totalHops;
+    const leftPercent = inset + fraction * (100 - inset * 2);
+    node.style.left = leftPercent + '%';
+
+    // Decide icon
+    const icon = (index === 0)
+      ? '🏠'
+      : (index === path.length - 1)
+        ? '🎯'
+        : '⏺️';
+
+    node.innerHTML = `
+      <div class="tooltip">
+        ${icon}
+        <span class="tooltip-text">
+          ${hop.name}<br>
+          IP: ${hop.ip}<br>
+          Latency: ${hop.latency.join('ms, ')}ms
+        </span>
+      </div>
+    `;
+    map.appendChild(node);
+  });
+}
+
+/* =======================
+   Quiz Logic
+   ======================= */
+const quizQuestions = [
+  {
+    question: "What does a '*' in traceroute results typically indicate?",
+    options: [
+      { text: "Successful packet delivery", correct: false },
+      { text: "Firewall blocking ICMP", correct: true },
+      { text: "High-speed connection", correct: false }
+    ]
+  },
+  {
+    question: "Where would you most likely find the ISP gateway?",
+    options: [
+      { text: "First hop", correct: false },
+      { text: "Second/Third hop", correct: true },
+      { text: "Final hop", correct: false }
+    ]
+  },
+  {
+    question: "What does TTL stand for in networking?",
+    options: [
+      { text: "Time-To-Live", correct: true },
+      { text: "Total Transmission Latency", correct: false },
+      { text: "Technical Transport Layer", correct: false }
+    ]
+  }
+];
+let currentQuestion = 0;
+let score = 0;
+
+function showNextQuestion() {
+  const quizContent = document.getElementById('quiz-content');
+  const question = quizQuestions[currentQuestion];
+  if (!question) return;
+
+  quizContent.innerHTML = `
+    <p><strong>Question ${currentQuestion + 1}:</strong> ${question.question}</p>
+    ${question.options.map((opt, i) => `
+      <div class="quiz-option" onclick="checkAnswer(${i})">
+        ${opt.text}
+      </div>
+    `).join('')}
+  `;
+}
+
+function checkAnswer(selectedIndex) {
+  const question = quizQuestions[currentQuestion];
+  const feedback = document.getElementById('quiz-feedback');
+  const correct = question.options[selectedIndex].correct;
+
+  feedback.innerHTML = correct
+    ? '✅ Correct! Well done!'
+    : '❌ Try again! Review the network concepts.';
+
+  if (correct) score++;
+
+  currentQuestion++;
+  setTimeout(() => {
+    feedback.innerHTML = '';
+    if (currentQuestion < quizQuestions.length) {
+      showNextQuestion();
+    } else {
+      showFinalResults();
+    }
+  }, 1500);
+}
+
+function showFinalResults() {
+  document.getElementById('quiz-content').innerHTML = `
+    <h4>Quiz Complete!</h4>
+    <p>Your score: ${score}/${quizQuestions.length}</p>
+    <button onclick="location.reload()">Try Again</button>
+  `;
+}
+
+/* =======================
+   Start Tracing
+   ======================= */
+function startTrace() {
+  // Show the quiz + first question
+  document.getElementById('quiz-box').style.display = 'block';
+  showNextQuestion();
+
+  // Grab domain from input
+  const target = document.getElementById('target').value;
+  const destObj = networkComponents.destinations[target] || networkComponents.destinations["example.com"];
+
+  // Generate path, update map, trace
+  const path = generatePath(destObj.region);
+  createNetworkMap(path);
+  displayTrace(path, target);
+
+  // Animate progress bar
+  const progressBar = document.getElementById('trace-progress');
+  let width = 0;
+  const animate = setInterval(() => {
+    if (width >= 100) {
+      clearInterval(animate);
+    } else {
+      width++;
+      progressBar.style.width = width + '%';
+    }
+  }, 50);
+
+  // Update the domain label in the pseudo terminal if user toggles it
+  document.getElementById('term-domain').textContent = target;
+  generatePseudoTracerouteOutput(target);
+}
+
+/* =======================
+   Pseudo Terminal
+   ======================= */
+function toggleRealTraceroute() {
+  const term = document.getElementById('pseudo-terminal');
+  if (term.style.display === 'none' || term.style.display === '') {
+    term.style.display = 'block';
+  } else {
+    term.style.display = 'none';
+  }
+}
+
+/**
+ * Generate or set a typical "traceroute output" for the pseudo-terminal.
+ * You could randomize this further, but here's a static example.
+ */
+function generatePseudoTracerouteOutput(domain) {
+  const outputEl = document.getElementById('real-traceroute-output');
+  const lines = [
+    "traceroute to " + domain + " (140.82.121.3), 30 hops max, 60 byte packets",
+    " 1  192.168.1.1 (192.168.1.1)  1.318 ms  1.032 ms  1.025 ms",
+    " 2  10.100.92.1 (10.100.92.1)  15.214 ms 14.921 ms 15.017 ms",
+    " 3  198.51.100.12 (198.51.100.12)  27.837 ms  28.100 ms  25.129 ms",
+    " 4  198.51.100.48 (198.51.100.48)  33.743 ms  34.209 ms  34.204 ms",
+    " 5  140.82.121.3 (140.82.121.3)  35.412 ms  36.052 ms  35.641 ms",
+    ""
+  ];
+  outputEl.textContent = lines.join("\n");
+}
+</script>
+
+</body>
+</html>
